@@ -10,14 +10,21 @@ type BlockChain struct {
 }
 
 func (blockchain *BlockChain) Initial() {
+
 	blockchain.Chain = make(map[int32][]Block)
 	blockchain.Length = 0
+
 }
 
 func (blockchain *BlockChain) Get(height int) []Block {
+
 	chain := blockchain.Chain
 	array := chain[int32(height)]
+	if array == nil {
+		return []Block{}
+	}
 	return array
+
 }
 
 func (blockchain *BlockChain) Insert(block Block) {
@@ -25,14 +32,24 @@ func (blockchain *BlockChain) Insert(block Block) {
 	height := block.Header.Height
 	chain := blockchain.Chain
 	block_arr := chain[height]
-	if len(block_arr) == 0 {
-		blockchain.Length += 1
+	if block.Header.Height > blockchain.Length {
+		blockchain.Length = block.Header.Height
 	}
-	block_arr = append(block_arr, block)
+	flag := false
+	for _, value := range block_arr {
+		if value.Header.Hash == block.Header.Hash {
+			flag = true
+		}
+	}
+	if flag == false {
+		block_arr = append(block_arr, block)
+	}
 	chain[height] = block_arr
+
 }
 
 func EncodeToJson(self BlockChain) (string, error) {
+
 	chain := self.Chain
 	block_arr := []JsonBlock{}
 	for _, v := range chain {
@@ -49,9 +66,11 @@ func EncodeToJson(self BlockChain) (string, error) {
 	}
 	byte_arr, _ := json.Marshal(block_arr)
 	return string(byte_arr), nil
+
 }
 
 func (blockchain *BlockChain) DecodeFromJson(jsonString string) {
+
 	block_arr := &[]JsonBlock{}
 	byte_arr := []byte(jsonString)
 	json.Unmarshal(byte_arr, block_arr)
@@ -59,11 +78,12 @@ func (blockchain *BlockChain) DecodeFromJson(jsonString string) {
 		json_result, _ := json.Marshal(json_block)
 		block := DecodeFromJson(string(json_result))
 		blockchain.Insert(block)
-
 	}
+
 }
 
 func DecodeJsonToBlockChain(jsonString string) (BlockChain, error) {
+
 	blockchain := BlockChain{}
 	blockchain.Initial()
 	block_arr := &[]JsonBlock{}
@@ -73,7 +93,7 @@ func DecodeJsonToBlockChain(jsonString string) (BlockChain, error) {
 		json_result, _ := json.Marshal(json_block)
 		block := DecodeFromJson(string(json_result))
 		blockchain.Insert(block)
-
 	}
+
 	return blockchain, nil
 }
