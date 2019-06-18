@@ -1,7 +1,14 @@
 package p2
 
 import (
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
+	"math/rand"
+	"sort"
+
+	"github.com/nvgruel123/cs686-blockchain-p3-nvgruel123/p1"
+	"golang.org/x/crypto/sha3"
 )
 
 type BlockChain struct {
@@ -16,15 +23,21 @@ func (blockchain *BlockChain) Initial() {
 
 }
 
-func (blockchain *BlockChain) Get(height int) []Block {
+func NewBlockChain() BlockChain {
+	bc := BlockChain{}
+	bc.Initial()
+	return bc
+}
+
+func (blockchain *BlockChain) Get(height int32) ([]Block, bool) {
 
 	chain := blockchain.Chain
 	array := chain[int32(height)]
 	if array == nil {
-		return []Block{}
+		return []Block{}, false
 	}
-	return array
 
+	return array, true
 }
 
 func (blockchain *BlockChain) Insert(block Block) {
@@ -61,12 +74,13 @@ func EncodeToJson(self BlockChain) (string, error) {
 			json_block.Size = block.Header.Size
 			json_block.Timestamp = block.Header.Timestamp
 			json_block.Mpt = block.Value.Data
+			json_block.User = block.User
 			block_arr = append(block_arr, *json_block)
 		}
 	}
-	byte_arr, _ := json.Marshal(block_arr)
-	return string(byte_arr), nil
+	byte_arr, err := json.Marshal(block_arr)
 
+	return string(byte_arr), err
 }
 
 func (blockchain *BlockChain) DecodeFromJson(jsonString string) {
@@ -96,4 +110,61 @@ func DecodeJsonToBlockChain(jsonString string) (BlockChain, error) {
 	}
 
 	return blockchain, nil
+}
+
+func (bc *BlockChain) Show() string {
+	rs := ""
+	var idList []int
+	for id := range bc.Chain {
+		idList = append(idList, int(id))
+	}
+	sort.Ints(idList)
+	for _, id := range idList {
+		var hashs []string
+		for _, block := range bc.Chain[int32(id)] {
+			hashs = append(hashs, block.Header.Hash+"<="+block.Header.ParentHash)
+		}
+		sort.Strings(hashs)
+		rs += fmt.Sprintf("%v: ", id)
+		for _, h := range hashs {
+			rs += fmt.Sprintf("%s, ", h)
+		}
+		rs += "\n"
+	}
+	sum := sha3.Sum256([]byte(rs))
+	rs = fmt.Sprintf("This is the BlockChain: %s\n", hex.EncodeToString(sum[:])) + rs
+	return rs
+}
+
+func (bc *BlockChain) GenBlock(mpt p1.MerklePatriciaTrie) Block {
+	height := bc.Length
+	chain := bc.Chain[height]
+	var block Block
+	length := len(chain)
+	pBlock := chain[rand.Intn(length)]
+	parentHash := pBlock.Header.Hash
+	block.Initial(height+1, parentHash, mpt)
+	bc.Insert(block)
+	return block
+}
+
+func (bc *BlockChain) GetLatestBlocks() []Block {
+	return bc.Chain[bc.Length]
+}
+
+func (bc *BlockChain) GetParentBlock(block Block) (Block, bool) {
+
+	height := block.Header.Height - 1
+	hash := block.Header.ParentHash
+	blocks := bc.Chain[height]
+	for _, block := range blocks {
+		if block.Header.Hash == hash {
+			return block, true
+		}
+	}
+	return Block{}, false
+}
+
+func (bc *BlockChain) GetFirstBlock() Block {
+	return bc.Chain[0][0]
 }

@@ -11,55 +11,57 @@ import (
 )
 
 type Flag_value struct {
-	encoded_prefix []uint8 // prefix + key end  0, 1 ext 2, 3 leaf
-	value          string  // value in leaf, hash value of next node in ext
+	Encoded_prefix []uint8 // prefix + key end  0, 1 ext 2, 3 leaf
+	Value          string  // value in leaf, hash value of next node in ext
 }
 
 type Node struct {
-	node_type    int        // 0: Null, 1: Branch, 2: Ext or Leaf
-	branch_value [17]string //not in ext or leaf
-	flag_value   Flag_value // not in branch
+	Node_type    int        // 0: Null, 1: Branch, 2: Ext or Leaf
+	Branch_value [17]string //not in ext or leaf
+	Flag_value   Flag_value // not in branch
 }
 
 type MerklePatriciaTrie struct {
-	db   map[string]Node // hash value of the node
-	root string          // hash value
+	Db   map[string]Node   // hash value of the node
+	Root string            // hash value
+	Data map[string]string // key value pairs
 }
 
 func (mpt *MerklePatriciaTrie) Get(key string) string {
 	// TODO
 
-	root := mpt.db[mpt.root]
+	root := mpt.Db[mpt.Root]
 	key_hex := str2hex(key)
 	result := ""
 
-	if root.node_type != 0 {
+	if root.Node_type != 0 {
 		result = mpt.Get_Rec(key_hex)
 	}
 	return result
 }
 
 func (mpt *MerklePatriciaTrie) Get_Rec(key_hex string) string {
-	root := mpt.db[mpt.root]
-	db := mpt.db
+	root := mpt.Db[mpt.Root]
+	db := mpt.Db
+	data := mpt.Data
 	result := ""
-	if root.node_type == 0 {
+	if root.Node_type == 0 {
 		return ""
-	} else if root.node_type == 1 {
+	} else if root.Node_type == 1 {
 		// branch
 		if key_hex == "" {
-			return root.branch_value[16]
+			return root.Branch_value[16]
 		} else {
-			branch_value := root.branch_value
+			branch_value := root.Branch_value
 			key_index := getIndex(key_hex)
 			next_node_hash := branch_value[key_index]
-			new_trie := MerklePatriciaTrie{db, next_node_hash}
+			new_trie := MerklePatriciaTrie{db, next_node_hash, data}
 			result = new_trie.Get_Rec(key_hex[1:])
 		}
 	} else {
 		// ext or leaf
-		encoded_prefix := root.flag_value.encoded_prefix
-		node_value := root.flag_value.value
+		encoded_prefix := root.Flag_value.Encoded_prefix
+		node_value := root.Flag_value.Value
 		decoded_arr := compact_decode(encoded_prefix)
 		prefix := getPrefix(encoded_prefix)
 		if prefix == 0 || prefix == 1 {
@@ -77,7 +79,7 @@ func (mpt *MerklePatriciaTrie) Get_Rec(key_hex string) string {
 				return ""
 			}
 			nibbles_len := len(nibbles_str)
-			new_trie := MerklePatriciaTrie{db, node_value}
+			new_trie := MerklePatriciaTrie{db, node_value, data}
 			result = new_trie.Get_Rec(key_hex[nibbles_len:])
 		} else {
 			// leaf
@@ -115,21 +117,23 @@ func getPrefix(encoded_prefix []uint8) uint8 {
 }
 
 func (mpt *MerklePatriciaTrie) Insert(key string, new_value string) {
-	root := mpt.db[mpt.root]
-	db := mpt.db
+	root := mpt.Db[mpt.Root]
+	db := mpt.Db
+	data := mpt.Data
+	data[key] = new_value
 	key_hex := str2hex(key)
-	if root.node_type == 0 {
+	if root.Node_type == 0 {
 		hex_array := hex2array(key_hex)
 		hex_array = append(hex_array, 0x10)
 		encoded_arr := compact_encode(hex_array)
 		flag_value := Flag_value{encoded_arr, new_value}
-		new_leaf_node := Node{node_type: 2, flag_value: flag_value}
-		delete(db, mpt.root)
+		new_leaf_node := Node{Node_type: 2, Flag_value: flag_value}
+		delete(db, mpt.Root)
 		new_leaf_hash := mpt.UpdateNode(new_leaf_node)
-		mpt.root = new_leaf_hash
+		mpt.Root = new_leaf_hash
 	} else {
 		hashed_node := mpt.Insert_Rec(key_hex, new_value)
-		mpt.root = hashed_node
+		mpt.Root = hashed_node
 	}
 }
 
@@ -158,12 +162,13 @@ func getCommonPath(key_hex string, nibbles_str string) string {
 
 func (mpt *MerklePatriciaTrie) Insert_Rec(key_hex string, new_value string) string {
 	hashed_node := ""
-	db := mpt.db
-	root := db[mpt.root]
+	db := mpt.Db
+	root := db[mpt.Root]
+	data := mpt.Data
 
-	if root.node_type == 1 {
+	if root.Node_type == 1 {
 		// branch node
-		branch_value := root.branch_value
+		branch_value := root.Branch_value
 
 		if key_hex == "" {
 			branch_value[16] = new_value
@@ -179,15 +184,15 @@ func (mpt *MerklePatriciaTrie) Insert_Rec(key_hex string, new_value string) stri
 				branch_value[key_index] = mpt.UpdateNode(new_leaf)
 			} else {
 
-				new_trie := MerklePatriciaTrie{db, next_node_hash}
+				new_trie := MerklePatriciaTrie{db, next_node_hash, data}
 				branch_value[key_index] = new_trie.Insert_Rec(key_hex[1:], new_value)
 			}
 		}
 		new_branch_node := Node{1, branch_value, Flag_value{}}
 		hashed_node = mpt.UpdateNode(new_branch_node)
-	} else if root.node_type == 2 {
-		encoded_prefix := root.flag_value.encoded_prefix
-		node_value := root.flag_value.value
+	} else if root.Node_type == 2 {
+		encoded_prefix := root.Flag_value.Encoded_prefix
+		node_value := root.Flag_value.Value
 		decoded_arr := compact_decode(encoded_prefix)
 		decoded_str := array2str(decoded_arr)
 		prefix := getPrefix(encoded_prefix)
@@ -199,7 +204,7 @@ func (mpt *MerklePatriciaTrie) Insert_Rec(key_hex string, new_value string) stri
 			// ext
 
 			if common_path == decoded_str {
-				new_trie := MerklePatriciaTrie{db, node_value}
+				new_trie := MerklePatriciaTrie{db, node_value, data}
 				new_branch_hash := new_trie.Insert_Rec(rest_path, new_value)
 				new_flag_value := Flag_value{encoded_prefix, new_branch_hash}
 				new_ext_node := Node{2, [17]string{}, new_flag_value}
@@ -209,7 +214,7 @@ func (mpt *MerklePatriciaTrie) Insert_Rec(key_hex string, new_value string) stri
 				new_branch_value := [17]string{}
 				if rest_nibbles == "" {
 					branch_node := db[node_value]
-					branch_value := branch_node.branch_value
+					branch_value := branch_node.Branch_value
 					for index, hash := range branch_value {
 						new_branch_value[index] = hash
 					}
@@ -230,7 +235,7 @@ func (mpt *MerklePatriciaTrie) Insert_Rec(key_hex string, new_value string) stri
 				}
 				new_branch := Node{1, new_branch_value, Flag_value{}}
 				new_branch_hash := mpt.UpdateNode(new_branch)
-				new_trie := MerklePatriciaTrie{db, new_branch_hash}
+				new_trie := MerklePatriciaTrie{db, new_branch_hash, data}
 				hashed_node = new_trie.Insert_Rec(rest_path, new_value)
 
 			} else {
@@ -250,7 +255,7 @@ func (mpt *MerklePatriciaTrie) Insert_Rec(key_hex string, new_value string) stri
 				}
 				new_branch_node := Node{1, new_branch_value, Flag_value{}}
 				new_branch_hash := mpt.UpdateNode(new_branch_node)
-				new_trie := MerklePatriciaTrie{db, new_branch_hash}
+				new_trie := MerklePatriciaTrie{db, new_branch_hash, data}
 				new_branch_hash = new_trie.Insert_Rec(rest_path, new_value)
 				new_encoded_arr := compact_encode(hex2array(common_path))
 				new_flag_value := Flag_value{new_encoded_arr, new_branch_hash}
@@ -272,15 +277,15 @@ func (mpt *MerklePatriciaTrie) Insert_Rec(key_hex string, new_value string) stri
 				new_branch_value := [17]string{}
 				new_branch := Node{1, new_branch_value, Flag_value{}}
 				new_branch_hash := mpt.UpdateNode(new_branch)
-				new_trie := MerklePatriciaTrie{db, new_branch_hash}
+				new_trie := MerklePatriciaTrie{db, new_branch_hash, data}
 				if common_path == "" {
 					new_branch_hash = new_trie.Insert_Rec(key_hex, new_value) // insert new value to empty branch
-					new_trie = MerklePatriciaTrie{db, new_branch_hash}
+					new_trie = MerklePatriciaTrie{db, new_branch_hash, data}
 					hashed_node = new_trie.Insert_Rec(decoded_str, node_value) // insert old leaf to branch
 				} else {
 					// create new ext and new branch
 					new_branch_hash = new_trie.Insert_Rec(rest_path, new_value)
-					new_trie = MerklePatriciaTrie{db, new_branch_hash}
+					new_trie = MerklePatriciaTrie{db, new_branch_hash, data}
 					new_branch_hash = new_trie.Insert_Rec(rest_nibbles, node_value)
 					new_common_arr := hex2array(common_path)
 					new_encoded_arr := compact_encode(new_common_arr)
@@ -297,7 +302,7 @@ func (mpt *MerklePatriciaTrie) Insert_Rec(key_hex string, new_value string) stri
 
 func (mpt *MerklePatriciaTrie) UpdateNode(node Node) string {
 	hashed_node := node.hash_node()
-	mpt.db[hashed_node] = node
+	mpt.Db[hashed_node] = node
 	return hashed_node
 }
 
@@ -309,19 +314,21 @@ func (mpt *MerklePatriciaTrie) Delete(key string) {
 	// TODO
 
 	if mpt.Get(key) != "" {
+		delete(mpt.Data, key)
 		key_hex := str2hex(key)
-		mpt.root = mpt.Delete_Rec(key_hex)
+		mpt.Root = mpt.Delete_Rec(key_hex)
 	}
 
 }
 
 func (mpt *MerklePatriciaTrie) Delete_Rec(key_hex string) string {
 	hashed_node := ""
-	db := mpt.db
-	root := db[mpt.root]
-	if root.node_type == 1 {
+	db := mpt.Db
+	root := db[mpt.Root]
+	data := mpt.Data
+	if root.Node_type == 1 {
 		// branch
-		branch_value := root.branch_value
+		branch_value := root.Branch_value
 		if key_hex == "" {
 			// delete value
 			branch_value[16] = ""
@@ -329,7 +336,7 @@ func (mpt *MerklePatriciaTrie) Delete_Rec(key_hex string) string {
 			// delete(update) index
 			key_index := getIndex(key_hex)
 			next_node_hash := branch_value[key_index]
-			new_trie := MerklePatriciaTrie{db, next_node_hash}
+			new_trie := MerklePatriciaTrie{db, next_node_hash, data}
 			next_node_hash = new_trie.Delete_Rec(key_hex[1:])
 			branch_value[key_index] = next_node_hash
 		}
@@ -350,7 +357,7 @@ func (mpt *MerklePatriciaTrie) Delete_Rec(key_hex string) string {
 			} else {
 				next_node_hash := branch_value[index]
 				next_node := db[next_node_hash]
-				if next_node.node_type == 1 {
+				if next_node.Node_type == 1 {
 					// next node branch, current node to ext
 					index_str := fmt.Sprintf("%d", index)
 					hex_arr := hex2array(index_str)
@@ -363,8 +370,8 @@ func (mpt *MerklePatriciaTrie) Delete_Rec(key_hex string) string {
 					new_key := fmt.Sprintf("%d", index)
 					next_node_hash := branch_value[index]
 					next_node := db[next_node_hash]
-					next_node_encoded_prefix := next_node.flag_value.encoded_prefix
-					next_node_value := next_node.flag_value.value
+					next_node_encoded_prefix := next_node.Flag_value.Encoded_prefix
+					next_node_value := next_node.Flag_value.Value
 					prefix := getPrefix(next_node_encoded_prefix)
 
 					if prefix == 0 || prefix == 1 {
@@ -397,7 +404,7 @@ func (mpt *MerklePatriciaTrie) Delete_Rec(key_hex string) string {
 		hashed_node = mpt.UpdateNode(new_branch)
 	} else {
 		// ext or leaf
-		encoded_prefix := root.flag_value.encoded_prefix
+		encoded_prefix := root.Flag_value.Encoded_prefix
 		prefix := getPrefix(encoded_prefix)
 		if prefix == 0 || prefix == 1 {
 			// ext
@@ -405,20 +412,20 @@ func (mpt *MerklePatriciaTrie) Delete_Rec(key_hex string) string {
 			nibble_str := array2str(decoded_arr)
 			nibble_len := len(nibble_str)
 			new_key_hex := key_hex[nibble_len:]
-			next_node_hash := root.flag_value.value
-			new_trie := MerklePatriciaTrie{db, next_node_hash}
+			next_node_hash := root.Flag_value.Value
+			new_trie := MerklePatriciaTrie{db, next_node_hash, data}
 			next_node_hash = new_trie.Delete_Rec(new_key_hex)
 			next_node := db[next_node_hash]
 
-			if next_node.node_type == 1 {
+			if next_node.Node_type == 1 {
 				// return node still branch, update current node
 				new_flag_value := Flag_value{encoded_prefix, next_node_hash}
 				new_ext_node := Node{2, [17]string{}, new_flag_value}
 				hashed_node = mpt.UpdateNode(new_ext_node)
 			} else {
 				// return node not branch
-				next_node_value := next_node.flag_value.value
-				next_node_encoded_prefix := next_node.flag_value.encoded_prefix
+				next_node_value := next_node.Flag_value.Value
+				next_node_encoded_prefix := next_node.Flag_value.Encoded_prefix
 				next_node_prefix := getPrefix(next_node_encoded_prefix)
 				if next_node_prefix == 1 || next_node_prefix == 0 {
 					// next node ext node, combine two ext to one
@@ -523,16 +530,16 @@ func test_compact_encode() {
 
 func (node *Node) hash_node() string {
 	var str string
-	switch node.node_type {
+	switch node.Node_type {
 	case 0:
 		str = ""
 	case 1:
 		str = "branch_"
-		for _, v := range node.branch_value {
+		for _, v := range node.Branch_value {
 			str += v
 		}
 	case 2:
-		str = node.flag_value.value
+		str = node.Flag_value.Value
 	}
 
 	sum := sha3.Sum256([]byte(str))
@@ -541,23 +548,23 @@ func (node *Node) hash_node() string {
 
 func (node *Node) String() string {
 	str := "empty string"
-	switch node.node_type {
+	switch node.Node_type {
 	case 0:
 		str = "[Null Node]"
 	case 1:
 		str = "Branch["
-		for i, v := range node.branch_value[:16] {
+		for i, v := range node.Branch_value[:16] {
 			str += fmt.Sprintf("%d=\"%s\", ", i, v)
 		}
-		str += fmt.Sprintf("value=%s]", node.branch_value[16])
+		str += fmt.Sprintf("value=%s]", node.Branch_value[16])
 	case 2:
-		encoded_prefix := node.flag_value.encoded_prefix
+		encoded_prefix := node.Flag_value.Encoded_prefix
 		node_name := "Leaf"
 		if is_ext_node(encoded_prefix) {
 			node_name = "Ext"
 		}
 		ori_prefix := strings.Replace(fmt.Sprint(compact_decode(encoded_prefix)), " ", ", ", -1)
-		str = fmt.Sprintf("%s<%v, value=\"%s\">", node_name, ori_prefix, node.flag_value.value)
+		str = fmt.Sprintf("%s<%v, value=\"%s\">", node_name, ori_prefix, node.Flag_value.Value)
 	}
 	return str
 }
@@ -567,7 +574,8 @@ func node_to_string(node Node) string {
 }
 
 func (mpt *MerklePatriciaTrie) Initial() {
-	mpt.db = make(map[string]Node)
+	mpt.Db = make(map[string]Node)
+	mpt.Data = make(map[string]string)
 }
 
 func is_ext_node(encoded_arr []uint8) bool {
@@ -579,9 +587,9 @@ func TestCompact() {
 }
 
 func (mpt *MerklePatriciaTrie) String() string {
-	content := fmt.Sprintf("ROOT=%s\n", mpt.root)
-	for hash := range mpt.db {
-		content += fmt.Sprintf("%s: %s\n", hash, node_to_string(mpt.db[hash]))
+	content := fmt.Sprintf("ROOT=%s\n", mpt.Root)
+	for hash := range mpt.Db {
+		content += fmt.Sprintf("%s: %s\n", hash, node_to_string(mpt.Db[hash]))
 	}
 	return content
 }

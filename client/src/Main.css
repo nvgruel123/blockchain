@@ -1,0 +1,12 @@
+.display {
+  width: "50%";
+  height: 300px;
+  margin-left: 30%;
+  margin-right:30%;
+  margin-top:200px;
+  text-align: center;
+}
+
+input {
+  width: 200px;
+}
